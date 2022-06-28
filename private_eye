@@ -1,0 +1,226 @@
+#!/bin/bash
+# author @lawliet666 <find me on THM>
+# This script is provided as it is only for individual, research and educational  purporses..
+# Use this script at your own risk. Don't be a fool. Use only on systems you are authorized!
+
+# colors
+NONE="\e[0m"
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+PURPLE="\e[35m"
+CIAN="\e[36m"
+
+custom="false"
+no_banner="false"
+user_endpoint='https://api.wigle.net/api/v2/profile/user'
+max_tries=1 #default; We don't recommend values above 3 due rate limits on wigle api
+
+# dependecies
+deps=('jq')
+
+# let's use Ukrainian colors! 
+_banner(){
+	echo -e "${BLUE}______        _                _          _____${NONE}"
+	echo -e "${BLUE}| ___ \      (_)              | |        |  ___|${NONE}"
+	echo -e "${BLUE}| |_/ / _ __  _ __   __  __ _ | |_   ___ | |__   _   _   ___${NONE}"
+	echo -e "${BLUE}|  __/ |  __|| |\ \ / / / _  || __| / _ \|  __| | | | | / _ \'${NONE}" 
+	echo -e "${YELLOW}| |    | |   | | \ V / | (_| || |_ |  __/| |___ | |_| ||  __/${NONE}"
+	echo -e "${YELLOW}\_|    |_|   |_|  \_/   \__,_| \__| \___|\____/  \__, | \___|${NONE}"
+	echo -e "${PURPLE}                                  By: @lawliet666${NONE}${YELLOW} __/ |${NONE}"
+	echo -e "${YELLOW}                                                 |___/${NONE}"
+	echo -e "\n"
+
+	no_banner="true"
+}
+
+_usage(){
+	if [[ ! $no_banner == "true" ]]; then
+		_banner
+	fi
+	
+	echo -e "${CIAN}Scan local Access Points:${NONE} Usage $0 [ -n <api name> ] [ -t <api token > ] -i <Int - Access points to be scanned | default=1 >" 1>&2
+	echo -e "${CIAN}Set custom Access Point:${NONE}  Usage $0 [ -n <api name> ] [ -t <api token>  ] -b < BSSID >" 1>&2
+	echo -e "${YELLOW}If you don't provide options -i or -b a local scan will be performed. Option -q removes banner${NONE}\n" 1>&2
+	echo -e "${GREEN}Visit wigle website and generate your api keys.${NONE} https://www.wigle.net\n" 1>&2
+	exit 2
+}
+
+while getopts ":n:t:i:b:q" o; do
+	case "${o}" in
+		n)
+			api_name=${OPTARG}
+			;;
+		t)
+			api_token=${OPTARG}
+			;;
+		i)
+			# verifies if a third parameter exists and it's an interger
+			interger_rex='^[0-9]+$'
+			if [[ ! -z ${OPTARG} ]] && [[ ${OPTARG} =~ $interger_rex ]]; then
+    				max_tries=${OPTARG}
+			else 
+				_banner
+				echo -e "${YELLOW}-i only accepts a interger! setting to default value=1${NONE}\n"
+			fi
+			;;
+		b)
+			custom="true"
+			bssid_regex='^([a-zA-Z0-9]{2}:){5}[a-zA-Z0-9]{2}$'
+			if [[ ! -z ${OPTARG} ]] && [[ ${OPTARG} =~ $bssid_regex ]]; then 
+				custom_bssid=${OPTARG}
+			else
+				_banner 
+				echo -e "${RED} Invalid BSSID !! Aborting investigation!!${NONE}\n" 1>&2
+				exit 2
+			fi
+			;;
+		q)
+			no_banner="true"
+			;;
+		*)
+			_usage
+			;;
+	esac
+
+done
+shift $((OPTIND-1))
+
+
+_check_deps_redhat(){
+	local failure=1
+	for dep in ${deps[@]}; do
+		yum list installed  | egrep "^$dep.x86_64\s" &> /dev/null
+		local code=$?
+		if [[ ! $code == 0 ]]; then 
+			echo -e "${YELLOW}please, install:${NONE} $dep" 1>&2
+			failure=0
+		fi
+	done
+	if [[ $failure == 0 ]]; then
+		echo -e "${RED}We are missing important packages! Aborting investigation!${NONE}\n" 1>&2 
+		exit 2
+	fi
+}
+
+_check_deps_debian(){
+	local failure=1
+	for dep in ${deps[@]}; do
+		apt list --installed 2>/dev/null | egrep "^$dep/" &> /dev/null
+		local code=$?
+		if [[ ! $code == 0 ]]; then 
+			echo -e "${YELLOW}please, install:${NONE} $dep" 1>&2
+			failure=0
+		fi
+	done
+	if [[ $failure == 0 ]]; then
+		echo -e "${RED}We are missing important packages! aborting investigation!${NONE}\n" 1>&2 
+		exit 2
+	fi
+}
+
+_verify_token(){
+    local code=$(curl -k -s -o /dev/null -w "%{http_code}" -H 'Accept:application/json' -u $api_name:$api_token --basic $user_endpoint)
+    if [[ ! $code  == "200" ]]; then
+		echo -e "${CIAN}You don't provided a valid api credential. Go to ${NONE}https://wigle.net/account${CIAN} or sign up${NONE}\n" 1>&2
+		exit 2
+    fi
+}
+
+_nm_query(){
+	# NetworkManager based bssid query
+	nmcli device wifi rescan 
+	sleep 5 
+	nmcli device wifi list  | egrep -om$max_tries  "(([A-Z0-9]{2}:){5}[A-Z0-9]{2})"
+}
+
+_encode_bssid(){
+	echo $1 | sed 's,:,%3A,g'
+}
+
+_call_api(){
+	local encoded_bssid=$1
+	curl -s -H 'Accept:application/json' -u $api_name:$api_token --basic "https://api.wigle.net/api/v2/network/detail?netid=$encoded_bssid"
+}
+
+_analyze_response(){
+	local response="$1"
+	local status=$(echo $response | jq .success)
+	local msg=$(echo $response | jq .message)
+	if [[  $status == "false" ]]; then
+		if [[ $msg == *"Too many queries today."* ]]; then 
+			echo -e "${YELLOW}You were blocked!! Try again tomorrow or try using different keys!!${NONE}" 1>&2
+			echo -e "${YELLOW}More info at:${NONE} https://wigle.net/phpbb/viewtopic.php?t=2580\n" 1>&2
+			exit 2
+		fi
+		echo -e "${YELLOW}Unkown failure!${NONE}" 1>&2
+	fi
+    security="$(echo $response | jq -r .results[0].encryption)"
+	country="$(echo $response | jq -r .results[0].country)"
+	region="$(echo $response | jq -r .results[0].region)"
+	city="$(echo $response | jq -r .results[0].city)"
+	housenumber="$(echo $response | jq -r .results[0].housenumber)"
+	road="$(echo $response | jq -r .results[0].road)"
+	postalcode="$(echo $response | jq -r .results[0].postalcode)"
+	latitude="$(echo $response | jq -r .results[0].locationData[0].latitude)"
+	longitude="$(echo $response | jq -r .results[0].locationData[0].longitude)"
+	ssid="$(echo $response | jq -r .results[0].locationData[0].ssid)"
+	netid="$(echo $response | jq -r .results[0].netid)"
+	echo 
+	echo -e "${GREEN}BSSID:|${NONE}\t$netid\n${GREEN}SSID:|${NONE}\t$ssid\n${GREEN}Security:|${NONE}\t$security\n${GREEN}Country:|${NONE}\t$country\n${GREEN}Region:|${NONE}\t$region\n${GREEN}City:|${NONE}\t$city\n${GREEN}Postal Code:|${NONE}\t$postalcode\n${GREEN}Street:|${NONE}\t$road\n${GREEN}Number:|${NONE}\t$housenumber\n${GREEN}Latitude:|${NONE}\t$latitude\n${GREEN}Longitude:|${NONE}\t$longitude" | column -t -s'|' 
+	echo 
+}
+
+# should we print the banner ? 
+if [[ ! $no_banner == "true" ]]; then
+	_banner
+fi
+
+if [[ -z $api_name ]] || [[ -z $api_token ]]; then
+	_usage 
+fi
+
+# Lets check if user has a valid token 
+_verify_token 
+
+# Verify OS, deps and execute bssid query 
+if [[ -f /etc/os-release ]]; then
+    has_support="false"
+	source /etc/os-release
+	# check if distribuition has something to do with redhat or if yum is installed 
+	if [[  $BUG_REPORT_URL == *"bugzilla.redhat.com"* ]] || [[  -f /usr/bin/yum ]] ; then
+		has_support="true"
+		_check_deps_redhat
+	fi
+	# check if distribuition is debian based
+	if [[ $ID_LIKE == "debian" ]] || [[ -f /usr/bin/apt ]]; then
+		has_support="true"
+		_check_deps_debian
+	fi
+	if [[ $has_support == "false" ]]; then
+	       echo -e "${RED}Sorry, your distro is not supported!.. but feel free to send a pull request!${NONE}\n" 1>&2
+	       exit 2	
+	fi
+	unset has_support
+fi
+
+## Run only if user asked for a local scan
+if [[ ! $custom == "true" ]]; then
+	BSSIDS=( $( _nm_query )) 
+	# Check if BSSIDS is empty
+	if [[ ${#BSSIDS[@]} -eq 0 ]]; then
+		echo -e "${YELLOW}No BSSID found!!${NONE}" 1>&2
+		echo -e "${YELLOW}Are you sure your target has a wirelles card installed ?${NONE}\n" 1>&2
+		exit 2
+	fi
+	for bssid in ${BSSIDS[@]}; do
+		_analyze_response "$( _call_api $( _encode_bssid $bssid) )"
+	done
+	exit 0 
+fi
+
+## Run scann on remote bssid 
+_analyze_response "$( _call_api $( _encode_bssid $custom_bssid) )"
+
+
