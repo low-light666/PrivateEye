@@ -1,7 +1,7 @@
 ## private_eye
 
 private_eye it's a simple osint tool.  
-It uses the wigle.net api to query bssids world wide and in order to find real address.  
+It uses the wigle.net api to query bssids world wide in order to find real addresses.  
 Although it's not 100% exact. Wigle.net API privides execelente data for OSINT enthusiasts and ethical hackers alike.  
 
 [Youtube Video](https://youtu.be/6nVQ5gNAgYs)
