@@ -10,8 +10,8 @@ Although it's not 100% exact. Wigle.net API privides execelente data for OSINT e
 
 #### request restritions
 In order to avoid abuse and bots. Wigle.net limits new users to only 5 queries a day using the api.  
-However it tends to aliviate this restrition after a few days.
+However it tends to aliviate this restriction after a few days.
 
-For more information please refer to the link: [wigle.net forum](https://wigle.net/phpbb/viewtopic.php?t=2580)
+For more information please refer to: [wigle.net forum](https://wigle.net/phpbb/viewtopic.php?t=2580)
 
 ![usage](imgs/blocked_private_eye.png)
