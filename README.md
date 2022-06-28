@@ -8,7 +8,7 @@ Although it's not 100% exact. Wigle.net API privides execelente data for OSINT e
 
 ![usage](imgs/private_eye.png)
 
-#### request restritions
+#### request restrictions
 In order to avoid abuse and bots. Wigle.net limits new users to only 5 queries a day using the api.  
 However it tends to aliviate this restriction after a few days.
 
